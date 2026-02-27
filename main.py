@@ -95,6 +95,7 @@ def run_http_server(wifi, oled, sm):
 
     recovery_check_interval_ms = 3000
     last_wifi_check = time.ticks_ms()
+    oled_freeze_until_ms = 0  # freeze display after /scan so results stay visible
 
     while True:
         # Periodic WiFi check
@@ -106,7 +107,8 @@ def run_http_server(wifi, oled, sm):
                 sm.transition_to(STATE_ERROR_RECOVERY)
                 return
 
-        update_oled(oled, sm, wifi)
+        if time.ticks_diff(now, oled_freeze_until_ms) >= 0:
+            update_oled(oled, sm, wifi)
 
         try:
             cl, addr = server.accept()
@@ -118,12 +120,14 @@ def run_http_server(wifi, oled, sm):
             response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nOK\r\n"
             if oled:
                 if b"/oledOn" in request or b"/status" in request:
+                    oled_freeze_until_ms = 0
                     oled.fill(0)
                     oled.text("State: " + sm.state, 0, 0)
                     oled.text("IP: " + wifi.ifconfig()[0], 0, 16)
                     oled.text("OK", 0, 32)
                     oled.show()
                 elif b"/oledOff" in request:
+                    oled_freeze_until_ms = 0
                     oled.fill(0)
                     oled.show()
                 elif b"/scan" in request:
@@ -135,6 +139,7 @@ def run_http_server(wifi, oled, sm):
                     oled.text(str(networks[3][0])[2:-1],0,30)
                     oled.text(str(networks[4][0])[2:-1],0,40)
                     oled.show()
+                    oled_freeze_until_ms = time.ticks_add(time.ticks_ms(), 10000)
             cl.send(response)
         finally:
             cl.close()
