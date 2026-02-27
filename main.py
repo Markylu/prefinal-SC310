@@ -26,6 +26,8 @@ class StateMachine:
         self.retry_count = 0
         self.backoff_sec = BACKOFF_BASE_SEC
         self.boot_done = False
+        self.connect_start_ms = None
+        self.connect_time_logged = False
 
     def transition_to(self, new_state):
         self.state = new_state
@@ -151,6 +153,7 @@ def main():
 
     wifi = network.WLAN(network.STA_IF)
     wifi.active(True)
+    sm.connect_start_ms = time.ticks_ms()
 
     while True:
         if sm.state == STATE_BOOT:
@@ -163,6 +166,10 @@ def main():
         elif sm.state == STATE_CONNECTING:
             update_oled(oled, sm, wifi)
             if try_wifi_connect(wifi):
+                if not sm.connect_time_logged and sm.connect_start_ms is not None:
+                    elapsed_ms = time.ticks_diff(time.ticks_ms(), sm.connect_start_ms)
+                    print("Connected in", elapsed_ms / 1000, "seconds")
+                    sm.connect_time_logged = True
                 sm.reset_retry()
                 sm.transition_to(STATE_OPERATIONAL)
             else:
