@@ -179,25 +179,34 @@ def fetch_bazaar_item(item_id):
     try:
         # had to learn all this stuff to get it to work ts pmo
         import ssl
+        # extract the ip address of the api, domain, port and family
         ai = socket.getaddrinfo("api.hypixel.net", 443, socket.AF_INET)
+        # gets ip
         addr = ai[0][-1]
+        # creates a socket object
         s = socket.socket()
+        # sets the timeout to 20 seconds
         s.settimeout(20)
         s.connect(addr)
+        # wraps the socket in ssl
         s = ssl.wrap_socket(s)
+        # creates a request object
         req = b"GET /skyblock/bazaar HTTP/1.1\r\nHost: api.hypixel.net\r\nConnection: close\r\n\r\n"
         s.write(req)
-        # Skip headers
+        # creates a buffer object
         buf = b""
+        # reads the stream in chunks of 256 bytes
         while b"\r\n\r\n" not in buf:
             chunk = s.read(256)
             if not chunk:
                 s.close()
                 return None
             buf += chunk
+            # if the buffer is greater than 8192 bytes, close the socket
             if len(buf) > 8192:
                 s.close()
                 return None
+        # splits the buffer into a header and a body
         head, body_start = buf.split(b"\r\n\r\n", 1)
         # Find "ITEM_ID": in stream and extract
         needle = ('"' + item_id + '":').encode("ascii")
@@ -211,8 +220,11 @@ def fetch_bazaar_item(item_id):
             if len(collected) > 64 * 1024:
                 break
         s.close()
+        # converts the collected bytes from a bytearray to a bytes object
         raw = bytes(collected)
+        # finds the needle in the raw bytes
         idx = raw.find(needle)
+        # if the needle is not found, return None
         if idx < 0:
             return None
         # Find the start of the JSON object
@@ -223,8 +235,10 @@ def fetch_bazaar_item(item_id):
         depth = 1
         i = start + 1
         while i < len(raw) and depth > 0:
+            # if the raw byte is a {, increment the depth
             if raw[i:i + 1] == b"{":
                 depth += 1
+            # if the raw byte is a }, decrement the depth
             elif raw[i:i + 1] == b"}":
                 depth -= 1
             i += 1
