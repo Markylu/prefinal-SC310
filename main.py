@@ -18,6 +18,8 @@ I2C_SCL = 21
 I2C_SDA = 22
 BAZAAR_API_URL = "https://api.hypixel.net/skyblock/bazaar"
 BAZAAR_FREEZE_MS = 10000
+BAZAAR_FETCH_RETRIES = 3
+BAZAAR_FETCH_RETRY_DELAY_SEC = 2
 HTTP_PORT = 80
 
 STATE_BOOT = "BOOT"
@@ -110,82 +112,101 @@ def try_wifi_connect(wifi):
     return True
 
 
-def fetch_bazaar_item(item_id):
-    item_id = item_id.replace(" ", "_").upper().strip()
-    if not item_id:
-        return None
-
+def _do_bazaar_fetch(item_id):
+    """Single attempt: connect, SSL handshake, request, parse. Raises on failure."""
+    import ssl
+    import gc
+    gc.collect()
+    ai = socket.getaddrinfo("api.hypixel.net", 443, socket.AF_INET)
+    addr = ai[0][-1]
+    s = socket.socket()
+    s.settimeout(25)
+    s.connect(addr)
+    time.sleep(0.3)
+    gc.collect()
     try:
-        import ssl
-        import gc
-        ai = socket.getaddrinfo("api.hypixel.net", 443, socket.AF_INET)
-        addr = ai[0][-1]
-        s = socket.socket()
-        s.settimeout(20)
-        s.connect(addr)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.verify_mode = ssl.CERT_NONE
+        s = ctx.wrap_socket(s, server_hostname="api.hypixel.net")
+    except AttributeError:
         s = ssl.wrap_socket(
             s,
             server_hostname="api.hypixel.net",
             cert_reqs=ssl.CERT_NONE,
         )
-        req = b"GET /skyblock/bazaar HTTP/1.1\r\nHost: api.hypixel.net\r\nConnection: close\r\n\r\n"
-        s.write(req)
-        buf = b""
-        while b"\r\n\r\n" not in buf:
-            chunk = s.read(256)
-            if not chunk:
-                s.close()
-                return None
-            buf += chunk
-            if len(buf) > 4096:
-                s.close()
-                return None
-        head, body_start = buf.split(b"\r\n\r\n", 1)
-        needle = ('"' + item_id + '":').encode("ascii")
-        collected = bytearray(body_start)
-        del buf
-        body_start = None
-        max_body = 32 * 1024
-        while len(collected) < max_body:
-            chunk = s.read(512)
-            if not chunk:
-                break
-            collected.extend(chunk)
-            if len(collected) >= max_body:
-                break
-        s.close()
-        s = None
-        idx = collected.find(needle)
-        if idx < 0:
+    req = b"GET /skyblock/bazaar HTTP/1.1\r\nHost: api.hypixel.net\r\nConnection: close\r\n\r\n"
+    s.write(req)
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        chunk = s.read(256)
+        if not chunk:
+            s.close()
             return None
-        start = collected.find(b"{", idx)
-        if start < 0:
+        buf += chunk
+        if len(buf) > 4096:
+            s.close()
             return None
-        depth = 1
-        i = start + 1
-        while i < len(collected) and depth > 0:
-            if collected[i:i + 1] == b"{":
-                depth += 1
-            elif collected[i:i + 1] == b"}":
-                depth -= 1
-            i += 1
-        if depth != 0:
-            return None
-        obj_str = bytes(collected[start:i]).decode("utf-8", "replace")
-        del collected
-        gc.collect()
-        prod = json.loads(obj_str)
-        qs = prod.get("quick_status") or {}
-        return {
-            "product_id": item_id,
-            "buyPrice": qs.get("buyPrice", 0),
-            "sellPrice": qs.get("sellPrice", 0),
-            "sellVolume": qs.get("sellVolume", qs.get("sellMovingWeek", 0)),
-            "buyVolume": qs.get("buyVolume", qs.get("buyMovingWeek", 0)),
-        }
-    except Exception as e:
-        print(e)
+    head, body_start = buf.split(b"\r\n\r\n", 1)
+    needle = ('"' + item_id + '":').encode("ascii")
+    collected = bytearray(body_start)
+    del buf
+    body_start = None
+    max_body = 32 * 1024
+    while len(collected) < max_body:
+        chunk = s.read(512)
+        if not chunk:
+            break
+        collected.extend(chunk)
+        if len(collected) >= max_body:
+            break
+    s.close()
+    s = None
+    idx = collected.find(needle)
+    if idx < 0:
         return None
+    start = collected.find(b"{", idx)
+    if start < 0:
+        return None
+    depth = 1
+    i = start + 1
+    while i < len(collected) and depth > 0:
+        if collected[i : i + 1] == b"{":
+            depth += 1
+        elif collected[i : i + 1] == b"}":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return None
+    obj_str = bytes(collected[start:i]).decode("utf-8", "replace")
+    del collected
+    gc.collect()
+    prod = json.loads(obj_str)
+    qs = prod.get("quick_status") or {}
+    return {
+        "product_id": item_id,
+        "buyPrice": qs.get("buyPrice", 0),
+        "sellPrice": qs.get("sellPrice", 0),
+        "sellVolume": qs.get("sellVolume", qs.get("sellMovingWeek", 0)),
+        "buyVolume": qs.get("buyVolume", qs.get("buyMovingWeek", 0)),
+    }
+
+
+def fetch_bazaar_item(item_id):
+    item_id = item_id.replace(" ", "_").upper().strip()
+    if not item_id:
+        return None
+    import gc
+    for attempt in range(BAZAAR_FETCH_RETRIES):
+        try:
+            out = _do_bazaar_fetch(item_id)
+            if out is not None:
+                return out
+        except Exception as e:
+            print(e)
+            gc.collect()
+            if attempt < BAZAAR_FETCH_RETRIES - 1:
+                time.sleep(BAZAAR_FETCH_RETRY_DELAY_SEC)
+    return None
 
 
 def parse_request_path(request):
