@@ -93,20 +93,16 @@ def init_hardware():
     oled = None
     try:
         addrs = i2c.scan()
-        print("[OLED] I2C scan SCL=%s SDA=%s -> %s" % (I2C_SCL, I2C_SDA, addrs))
         if not addrs:
-            print("[OLED] no device found")
             return oled
         for width, height in [(128, 64), (128, 32)]:
             try:
                 oled = ssd1306.SSD1306_I2C(width, height, i2c)
-                print("[OLED] init OK %sx%s" % (width, height))
                 return oled
-            except OSError as e:
-                print("[OLED] %sx%s failed: %s" % (width, height, e.args if e.args else e))
-        print("[OLED] all sizes failed")
-    except Exception as e:
-        print("[OLED] init failed:", type(e).__name__, e.args if getattr(e, "args", None) else "")
+            except OSError:
+                pass
+    except Exception:
+        pass
     return oled
 
 
