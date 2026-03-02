@@ -123,11 +123,7 @@ def fetch_bazaar_item(item_id):
         s = socket.socket()
         s.settimeout(20)
         s.connect(addr)
-        s = ssl.wrap_socket(
-            s,
-            server_hostname="api.hypixel.net",
-            cert_reqs=ssl.CERT_NONE,
-        )
+        s = ssl.wrap_socket(s)
         req = b"GET /skyblock/bazaar HTTP/1.1\r\nHost: api.hypixel.net\r\nConnection: close\r\n\r\n"
         s.write(req)
         buf = b""
