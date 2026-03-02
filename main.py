@@ -117,6 +117,7 @@ def fetch_bazaar_item(item_id):
 
     try:
         import ssl
+        import gc
         ai = socket.getaddrinfo("api.hypixel.net", 443, socket.AF_INET)
         addr = ai[0][-1]
         s = socket.socket()
@@ -132,38 +133,43 @@ def fetch_bazaar_item(item_id):
                 s.close()
                 return None
             buf += chunk
-            if len(buf) > 8192:
+            if len(buf) > 4096:
                 s.close()
                 return None
         head, body_start = buf.split(b"\r\n\r\n", 1)
         needle = ('"' + item_id + '":').encode("ascii")
         collected = bytearray(body_start)
-        while True:
+        del buf
+        body_start = None
+        max_body = 32 * 1024
+        while len(collected) < max_body:
             chunk = s.read(512)
             if not chunk:
                 break
             collected.extend(chunk)
-            if len(collected) > 64 * 1024:
+            if len(collected) >= max_body:
                 break
         s.close()
-        raw = bytes(collected)
-        idx = raw.find(needle)
+        s = None
+        idx = collected.find(needle)
         if idx < 0:
             return None
-        start = raw.find(b"{", idx)
+        start = collected.find(b"{", idx)
         if start < 0:
             return None
         depth = 1
         i = start + 1
-        while i < len(raw) and depth > 0:
-            if raw[i:i + 1] == b"{":
+        while i < len(collected) and depth > 0:
+            if collected[i:i + 1] == b"{":
                 depth += 1
-            elif raw[i:i + 1] == b"}":
+            elif collected[i:i + 1] == b"}":
                 depth -= 1
             i += 1
         if depth != 0:
             return None
-        obj_str = raw[start:i].decode("utf-8", "replace")
+        obj_str = bytes(collected[start:i]).decode("utf-8", "replace")
+        del collected
+        gc.collect()
         prod = json.loads(obj_str)
         qs = prod.get("quick_status") or {}
         return {
@@ -173,7 +179,8 @@ def fetch_bazaar_item(item_id):
             "sellVolume": qs.get("sellVolume", qs.get("sellMovingWeek", 0)),
             "buyVolume": qs.get("buyVolume", qs.get("buyMovingWeek", 0)),
         }
-    except Exception:
+    except Exception as e:
+        print(e)
         return None
 
 
