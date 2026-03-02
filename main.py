@@ -255,7 +255,7 @@ def run_http_server(wifi, oled_manager, sm):
                         )
                         oled_freeze_until_ms = time.ticks_add(time.ticks_ms(), BAZAAR_FREEZE_MS)
                         response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBuy: %s Sell: %s\r\n" % (
-                            data["sellPrice"], data["buyPrice"]
+                            data["buyPrice"], data["sellPrice"]
                         )
                     else:
                         oled_manager.show_bazaar_error("Item not found")
