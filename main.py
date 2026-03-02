@@ -93,10 +93,14 @@ def init_hardware():
     oled = None
     try:
         addrs = i2c.scan()
+        print("[OLED] I2C scan SCL=%s SDA=%s -> %s" % (I2C_SCL, I2C_SDA, addrs))
         if addrs:
             oled = ssd1306.SSD1306_I2C(128, 64, i2c)
-    except Exception:
-        pass
+            print("[OLED] init OK")
+        else:
+            print("[OLED] no device found")
+    except Exception as e:
+        print("[OLED] init failed:", type(e).__name__)
     return oled
 
 
